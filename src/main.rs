@@ -20,7 +20,7 @@ const HELP: &str = "renderledger commands
   suite [iterations]                     Compare all generated models on CPU, GPU, NPU
   bench <model> <CPU|GPU|NPU|all> [iterations]
                                          Benchmark a local ONNX or OpenVINO IR model
-  gui [port]                             Start the loopback dashboard (default 8765)
+  gui [port|--open]                             Start the loopback dashboard (default 8765)
   gen <chat|image|reference> <device>              Run local generation from JSON on stdin
 Set NPU_LAB_RUNNER to the full path of benchmark_app.exe if it isn't on PATH.";
 
@@ -79,6 +79,7 @@ fn run(args: &[String]) -> io::Result<bool> {
             }
             println!("{}", result?);
         }
+        ["gui", "--open"] => gui::serve_and_open()?,
         ["gui", port] => {
             let port = port
                 .parse()

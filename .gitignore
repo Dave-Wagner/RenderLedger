@@ -8,3 +8,9 @@
 /.env
 /node_modules/
 /runpod-job/
+
+# Local credentials, output and private datasets
+.env.*
+!.env.example
+/dist/
+/datasets/DaytonWitch*

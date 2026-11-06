@@ -14,13 +14,31 @@ cargo run --release -- gui
 
 Open [the dashboard](http://127.0.0.1:8765). **Detect hardware** shows the connected GPU and accelerator. **Run benchmark** compares CPU, GPU, and NPU using either the three convolution graphs or the MNIST digit classifier. Switch the chart between median warm latency, first inference, and throughput. The raw log includes compilation and device details. The dashboard binds only to the loopback address and reports results after the run completes.
 
-## Internal distribution
+## Install on Windows
 
-On Windows x64, run `powershell -NoProfile -File .\package-windows.ps1` from the project folder. The ZIP and its SHA-256 checksum appear in `target/distribution/packages`. Recipients extract it into a writable folder and open `Start-RenderLedger.cmd`. The ZIP contains the app, license, and setup instructions. Each recipient supplies their own credentials, model weights, and optional local inference runtime.
+For a Snapdragon laptop, use the **Windows ARM64** ZIP. Intel and AMD laptops use **Windows x64**. Extract the ZIP, then double-click **Install-RenderLedger.cmd**. It installs under `%LOCALAPPDATA%\RenderLedger`, opens the dashboard, and adds RenderLedger to the Start menu. Future updates use the same installer. Close the running dashboard after stopping active workloads before installing an update. Settings, history, and models stay in the install folder.
+
+The dashboard needs no administrator access, compiler, model downloads, or API keys. For Runpod or ElevenLabs, double-click **Set-Up-Cloud-Tools.cmd** to set up Python via WinGet, then add your own credentials in the install folder's `.env` and restart. See [the example config](.env.example) for supported settings. ARM64 refers to the dashboard executable; this package does not set up a Snapdragon NPU or local OpenVINO inference.
+
+The [Windows build workflow](.github/workflows/build-windows.yml) produces unsigned ZIPs and checksums for both architectures. Test artifacts from `dev` first. To share a production build, attach the ZIP and checksum from a green `main` run to a GitHub Release for that commit. Share the Release link with recipients.
+
+To build from source on a Windows machine with WinGet, run the setup script. It installs Rust and the Microsoft C++ tools and SDK as needed, then builds the ZIP. Installing the C++ tools may require administrator approval.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup-windows-dev.ps1
+```
+
+The script defaults to the host architecture. If the prerequisites are already installed, run `powershell -NoProfile -File .\package-windows.ps1 -Architecture arm64` directly (use `x64` for Intel or AMD). The ZIP and checksum appear under `target/distribution/packages`.
 
 For Authenticode signing, pass `-CertificateThumbprint <thumbprint> -SignTool <path-to-signtool.exe>` on a machine with access to the code-signing certificate and its private key. The script signs and timestamps the executable and verifies its signature before creating the signed ZIP. A signature identifies the publisher. SmartScreen reputation and an organization's App Control policy still determine what users can run. For managed PCs, ask IT to approve the signer or deploy an allow rule. [Microsoft SmartScreen and signing guidance](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)
 
 The [Linux ARMv7 workflow](.github/workflows/build-armv7.yml) cross-compiles for `armv7-unknown-linux-gnueabihf`, runs the CLI and dashboard under QEMU, and uploads a tarball and checksum. Use **Actions → Build Linux ARMv7 → Run workflow** after the workflow is on GitHub. The target is 32-bit ARMv7 Linux with glibc and hard-float support. The workflow checks the dashboard and SQLite history. Local inference requires an ARM-compatible runtime and model, and remote integrations require Python 3 and provider credentials.
+
+## Contributing
+
+`main` is production and `dev` is the integration branch. Create feature branches from `dev`, open pull requests into `dev`, and test there before opening a release pull request from `dev` to `main`. Tag releases from `main`. For an urgent production fix, branch from `main` and merge the fix back into `dev` after release.
+
+Document new user-facing settings in `.env.example` in the same pull request. Keep credential values blank. CI checks the template against the app's configuration names. Keep private assets and live configuration out of public commits and artifacts.
 
 ## Try a model by hand
 

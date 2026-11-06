@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en" data-theme="dim">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RenderLedger</title>
+<link rel="icon" href="/renderledger.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/dashboard.css">
+<style>
+:root { font:14px/1.45 system-ui,sans-serif }
+* { box-sizing:border-box }
+[hidden] { display:none !important }
+body { margin:0 }
+main { margin:auto; padding:2.5rem 1.2rem 5rem }
+header { padding:1.5rem 0 2rem; border-bottom:1px solid var(--line) }
+h1 { font-size:clamp(2.8rem,8vw,5rem); line-height:1; margin:.3em 0; letter-spacing:-.05em }
+h2,h3,p { margin-top:0 }
+p { color:var(--muted) }
+.eyebrow { color:var(--accent); font-weight:750; font-size:.78rem; letter-spacing:.15em }
+section { margin-top:2.25rem }
+.cards,.task-grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr)) }
+#reference-results { gap:.6rem; grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr)); margin:.65rem 0 }
+#reference-results article { min-width:0; padding:.6rem; border:1px solid var(--color-base-300); border-radius:.55rem }
+#reference-results h3 { font-size:.95rem; margin:0 }
+#reference-results p { font-size:.8rem; margin:.25rem 0 .45rem }
+#reference-results img { width:100% }
+article,.panel { padding:1.15rem; border:1px solid var(--line); border-radius:.8rem; background:var(--panel) }
+article p:last-child { margin-bottom:0 }
+.controls { display:flex; align-items:end; flex-wrap:wrap; gap:.7rem; margin:1rem 0 }
+nav [aria-current=page] { background:color-mix(in srgb,var(--accent) 18%,var(--panel)); color:var(--accent) }
+button:not(.btn,.tab),input:not(.input,.checkbox,.file-input),select:not(.select) { display:block; border:1px solid var(--line); padding:.45rem .65rem; border-radius:.4rem; font:inherit }
+button:not(.btn,.tab) { cursor:pointer; font-weight:700; color:var(--color-primary-content); background:var(--color-primary) }
+button.secondary { color:var(--color-base-content); background:var(--color-base-300) }
+button:disabled { opacity:.55; cursor:wait }
+label { color:var(--muted); font-size:.9rem }
+input[type=number] { width:6rem }
+canvas { display:block; width:min(100%,230px); aspect-ratio:1; background:#000; border:1px solid #64808f; border-radius:.35rem; touch-action:none }
+#drawing { cursor:crosshair }
+#heatmap { image-rendering:pixelated }
+pre { max-height:23rem; overflow:auto; background:var(--panel); padding:.8rem; white-space:pre-wrap; overflow-wrap:anywhere }
+details { margin-top:1rem }
+summary { cursor:pointer }
+.bar-row { display:grid; grid-template-columns:3rem minmax(3rem,1fr) 7.5rem; gap:.5rem; align-items:center; font-variant-numeric:tabular-nums; margin:.4rem 0 }
+.bar-track { background:var(--line); height:.65rem; border-radius:1rem; overflow:hidden }
+.bar { height:100%; border-radius:1rem; background:var(--color-myColor-500) }
+.CPU { background:var(--color-myColor-300) }.GPU { background:var(--color-myColor-500) }.NPU { background:var(--color-myColor-600) }
+.chart-group { border-bottom:1px solid var(--line); padding:.8rem 0 }
+.chart-group:last-child { border:0 }
+.table-scroll { overflow:auto }
+table { width:100%; border-collapse:collapse; text-align:left }
+td,th { padding:.45rem; border-bottom:1px solid var(--line) }
+output { display:block; margin:.65rem 0; color:inherit }
+textarea:not(.textarea) { display:block; width:100%; padding:.6rem; font:inherit; border:1px solid var(--line); border-radius:.4rem }
+#generated-image { width:100%; max-width:512px; height:auto; display:block }
+#image-download { color:var(--accent); display:inline-block; margin-top:.5rem }
+#conversation pre { max-height:14rem }
+#conversation { max-height:34rem; overflow:auto }
+</style>
+<style>
+.chat-layout { display:grid; grid-template-columns:minmax(9rem,15rem) minmax(0,1fr); gap:1rem }
+#rooms button { width:100%; text-align:left; margin-bottom:.45rem }
+#rooms [aria-current=true] { outline:2px solid var(--accent); outline-offset:2px }
+#conversation:empty { display:none }
+#conversation pre { max-height:none; margin:.3rem 0 .9rem }
+
+@media(max-width:620px) { .chat-layout { grid-template-columns:1fr } }
+</style>
+<main class="workbench-shell">
+
+  <header class="workbench-toolbar">
+    <div class="toolbar-context"><span class="eyebrow">LOCAL WORKSPACE</span><strong id="workspace-view">Chat rooms</strong></div>
+    <div class="toolbar-credit" aria-label="Runpod credit">
+      <span class="eyebrow">RUNPOD CREDIT</span>
+      <output id="header-runpod-balance" role="status">Loading…</output>
+      <span id="header-runpod-updated"></span>
+    </div>
+    <div class="toolbar-credit" aria-label="ElevenLabs credits">
+      <span class="eyebrow">ELEVENLABS CREDITS</span>
+      <output id="header-eleven-balance" role="status">Loading…</output>
+      <span id="header-eleven-updated"></span>
+    </div>
+    <div class="toolbar-credit toolbar-billing">
+      <span class="eyebrow">RUNPOD BILLING</span>
+      <output id="runpod-billing-status" role="status">Loading charges…</output>
+    </div>
+    <button class="btn btn-outline btn-sm" id="probe">Detect hardware</button>
+    <label class="toolbar-theme">Theme
+      <select class="select select-sm" id="theme-preference">
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+    <button id="stop-work" class="btn btn-error btn-soft btn-sm">Stop active workload</button>
+    <div class="toolbar-activity" aria-label="Workload activity">
+      <div><span>Local / editor</span><output id="header-local-activity">Checking…</output><output id="media-workload-status" hidden></output></div>
+      <div><span>Runpod job</span><output id="header-runpod-activity">Checking…</output></div>
+      <div><span>Capacity watch</span><output id="header-watch-activity">Checking…</output></div>
+      <output id="workload-status" role="status"></output>
+    </div>
+  </header>
+  <nav id="workbench-nav" aria-label="Workbench" class="workbench-sidebar">
+    <div class="brand"><img src="/renderledger.svg" alt="" width="32" height="32"><strong>RenderLedger</strong><small>MODEL WORKBENCH</small></div>
+    <ul class="menu menu-vertical w-full gap-2 p-3">
+      <li><a href="#chat">Chat rooms</a></li><li><a href="#images">Image studio</a></li>
+      <li><a href="#benchmark">Benchmarks</a></li><li><a href="#playground">Task playground</a></li>
+      <li>
+        <details class="rail-section" id="media-nav-group" open>
+          <summary>Media Studio</summary>
+          <ul>
+            <li><a href="#media/speech">Speech</a></li>
+            <li><a href="#media/music">Music</a></li>
+            <li><a href="#media/video">Video</a></li>
+          </ul>
+        </details>
+      </li>
+      <li><a href="#runpod">Runpod</a></li><li><a href="#catalog">Model guide</a></li>
+    </ul>
+  </nav>
+  <div class="workbench-content">
+  <pre id="hardware" hidden></pre>
+
+  <section id="benchmark">
+    <div class="eyebrow">01 / SPEED</div>
+    <h2>Compare devices</h2>
+    <p>Run identical synthetic inputs across CPU, GPU, and NPU. Median latency measures typical warm inference. Throughput measures completed inferences per second. First inference includes device startup work after model loading.</p>
+    <div class="workspace-split">
+    <div class="panel card bg-base-200 border border-base-300">
+      <h3>Benchmark settings</h3>
+      <form id="benchmark-form" class="controls">
+        <label>Workload<select class="select" id="benchmark-model"><option value="suite">Three convolution graphs</option><option value="mnist">MNIST digit classifier</option></select></label>
+        <label>Iterations per device<input class="input" id="iterations" type="number" min="1" max="10000" value="50" required></label>
+        <button class="btn btn-primary" type="submit">Run benchmark</button>
+      </form>
+    </div>
+    <div class="panel card bg-base-200 border border-base-300">
+      <h3>Device results</h3>
+      <label>Chart metric<select class="select" id="metric"><option value="median">Median latency (ms)</option><option value="first">First inference (ms)</option><option value="throughput">Throughput (inferences/s)</option></select></label>
+      <output id="benchmark-status">Run a benchmark to populate the chart.</output>
+      <div id="chart" aria-label="Benchmark chart"></div>
+      <details id="benchmark-details" hidden><summary>Full OpenVINO output</summary><pre id="benchmark-log"></pre></details>
+    </div>
+    </div>
+  </section>
+
+  <section id="playground">
+    <div class="eyebrow">02 / BEHAVIOR</div>
+    <h2>Try a drawing</h2>
+    <p>Draw a single digit to test classification, or sketch any shape to see which regions activate a synthetic convolution filter. Reuse the drawing across devices for a direct comparison.</p>
+    <div class="task-grid">
+      <div class="panel card bg-base-200 border border-base-300">
+        <form id="task-form">
+          <div class="controls">
+            <label>Model<select class="select" id="task-model"><option value="mnist">MNIST digit classifier</option><option value="conv-small">Small convolution</option><option value="conv-wide">Wide convolution</option><option value="conv-large">Large convolution</option></select></label>
+            <label>Device<select class="select" id="device"><option>CPU</option><option>GPU</option><option>NPU</option></select></label>
+          </div>
+          <p id="task-guide">Draw a digit from 0 to 9. The drawing is cropped and centered before inference.</p>
+          <canvas id="drawing" width="224" height="224" aria-label="Digit drawing pad"></canvas>
+          <div class="controls">
+            <label>Expected digit or sample<select class="select" id="expected"><option value="">Unlabeled</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option></select></label>
+            <button id="sample" type="button" class="btn btn-outline">Load sample</button>
+            <button id="clear" type="button" class="btn btn-outline">Clear</button>
+            <button class="btn btn-primary" type="submit">Run task</button>
+          </div>
+        </form>
+      </div>
+      <div class="panel card bg-base-200 border border-base-300">
+        <h3>Task result</h3>
+        <output id="task-status">Ready for a drawing.</output>
+        <div id="scores" aria-label="Digit scores"></div>
+        <canvas id="heatmap" width="28" height="28" aria-label="Convolution activation heatmap" hidden></canvas>
+      </div>
+    </div>
+    <div class="panel card bg-base-200 border border-base-300" style="margin-top:1rem">
+      <h3>Trial log</h3>
+      <p>Use the expected label to record matches on your own drawings. The log lasts for this page session.</p>
+      <div class="table-scroll"><table class="table table-zebra"><thead><tr><th>Model</th><th>Execution device</th><th>Expected</th><th>Result</th><th>First call</th></tr></thead><tbody id="trials"></tbody></table></div>
+    </div>
+  </section>
+
+  <section id="chat">
+    <div class="eyebrow">03 / GENERATION</div>
+    <h2>Chat rooms</h2>
+    <div class="chat-layout">
+      <aside class="panel card bg-base-200 border border-base-300"><h3>Rooms</h3><div id="rooms"></div><button id="new-room" class="btn btn-outline">New room</button></aside>
+      <div class="panel card bg-base-200 border border-base-300">
+        <div class="workspace-tabs" role="group" aria-label="Chat workspace">
+          <button type="button" class="btn workspace-tab" id="chat-mode-chat" aria-pressed="true">
+            <strong>Chat</strong><span>Continue a conversation</span>
+          </button>
+          <button type="button" class="btn workspace-tab" id="chat-mode-compare" aria-pressed="false">
+            <strong>Compare models</strong><span>Test one prompt across models</span>
+          </button>
+        </div>
+        <div id="chat-samples" class="controls" aria-label="Sample chat prompts"></div>
+        <div id="conversation" aria-label="Conversation"></div>
+        <form id="chat-form">
+          <label>Message<textarea class="textarea w-full" id="chat-prompt" rows="4" maxlength="2400" required placeholder="Write a two-line poem about a rainy evening."></textarea></label>
+          <div class="controls">
+            <label>Model<select class="select" id="chat-model"><option value="baseline">Qwen2 0.5B Instruct INT4</option></select></label>
+            <label>Device<select class="select" id="chat-device"><option>CPU</option><option>GPU</option><option>NPU</option></select></label>
+            <label>Reply token limit<input class="input" id="chat-tokens" type="number" min="1" max="256" value="96" required></label>
+            <button class="btn btn-primary" id="chat-send" type="submit">Send · Local</button>
+          </div>
+          <div class="controls" id="chat-compare-controls" hidden>
+            <label><input class="checkbox checkbox-sm" name="chat-remote" type="checkbox" value="32b" checked> Qwen2.5 32B · Runpod</label>
+            <label><input class="checkbox checkbox-sm" name="chat-remote" type="checkbox" value="72b"> Qwen2.5 72B · Runpod</label>
+            <label><input class="checkbox checkbox-sm" id="chat-local-reference" type="checkbox"> Include selected local model</label>
+            <button class="btn btn-outline" type="submit" value="compare">Compare installed models</button>
+            <button class="btn btn-outline" type="submit" value="remote">Compare on Runpod</button>
+          </div>
+        </form>
+        <output id="chat-status">Ready</output>
+        <p id="chat-model-setup"></p>
+        <div id="chat-comparison" hidden>
+          <p id="chat-comparison-prompt"></p>
+          <div class="desktop-table-scroll">
+            <table class="table table-zebra" aria-label="Chat comparison results">
+              <thead><tr><th>Read</th><th>Model / target</th><th>Status</th><th>Generation</th><th>Tokens</th><th>Cost</th><th>Rating</th></tr></thead>
+              <tbody id="chat-comparison-rows"></tbody>
+            </table>
+          </div>
+          <div id="chat-comparison-reader" class="task-grid" aria-label="Selected replies"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section id="images">
+    <div class="eyebrow">04 / GENERATION</div>
+    <h2>Image comparisons</h2>
+    <div class="workspace-split">
+      <div class="panel card bg-base-200 border border-base-300">
+        <h3>Stable Diffusion 1.5 INT8 <span class="badge badge-success">Local · OpenVINO</span></h3>
+        <p>Generate a 256 × 256 preview. Start with four steps and reuse the seed to compare prompts.</p>
+        <div id="image-samples" class="controls" aria-label="Sample image prompts"></div>
+        <form id="image-form">
+          <label>Positive prompt<textarea class="textarea w-full" id="image-prompt" rows="3" maxlength="1000" placeholder="What should appear in the image?"></textarea></label>
+          <label>Negative prompt (optional)<textarea class="textarea w-full" id="image-negative-prompt" rows="2" maxlength="1000" placeholder="text, lettering, logos, watermarks"></textarea></label>
+          <label>Reference image (optional)<input class="file-input w-full" id="image-reference" type="file" accept="image/png,image/jpeg,image/webp"></label>
+          <p>With a reference, you can leave the prompt blank. Lower strength preserves more of the input. Run each device with the same settings to compare. RGB difference measures pixel changes, with 0% meaning identical pixels.</p>
+          <label id="image-strength-control" hidden>Strength<input class="input" id="image-strength" type="number" min="0.25" max="1" step="0.05" value="0.5"></label>
+          <div class="controls">
+            <label>Target<select class="select" id="image-device"><option>CPU</option><option>GPU</option><option disabled>NPU</option><optgroup label="Saved LoRAs · paid Runpod" id="image-lora-targets"></optgroup></select></label>
+            <label>Seed<input class="input" id="image-seed" type="number" min="0" max="2147483647" value="42" required></label>
+            <label>Steps<input class="input" id="image-steps" type="number" min="1" max="8" value="4" required></label>
+            <button class="btn btn-primary" type="submit">Generate image</button>
+            <button class="btn btn-primary" type="submit" value="all">Compare all available</button>
+          </div>
+          <label><input class="checkbox checkbox-sm" type="checkbox" id="image-include-runpod"> Include paid Runpod comparisons</label>
+          <p>Compare all uses the same prompt and seed across compatible targets. Runpod requires confirmation and runs one Pod at a time.</p>
+          <details><summary>Choose individual batch targets</summary>
+            <div class="controls" id="batch-targets">
+              <label><input class="checkbox" type="checkbox" value="CPU" checked>CPU · SD 1.5</label>
+              <label><input class="checkbox" type="checkbox" value="GPU" checked>GPU · SD 1.5</label>
+              <label><input class="checkbox" type="checkbox" value="NPU" checked>NPU · SD 1.5 reference</label>
+              <button class="btn btn-primary" type="submit" value="batch">Run selected targets</button>
+            </div>
+          </details>
+        </form>
+      </div>
+      <div class="panel card bg-base-200 border border-base-300">
+        <h3>Results &amp; comparisons</h3>
+        <output id="image-status">Ready</output>
+        <img id="generated-image" alt="Image generated from your prompt" hidden>
+        <a id="image-download" download="renderledger-image.png" hidden>Save PNG</a>
+        <div id="reference-results" class="task-grid" hidden></div>
+        <details open>
+        <summary>Saved image runs</summary>
+        <div class="controls"><label>Filter history<input class="input" id="history-filter" type="search" placeholder="Prompt, target, or model"></label><button id="history-refresh" class="btn btn-outline">Refresh</button></div>
+        <output id="history-status" role="status"></output>
+        <div class="desktop-table-scroll"><table class="table table-zebra"><thead><tr><th>Run</th><th>Prompt / model</th><th>Target</th><th>Status</th><th>Actions</th></tr></thead><tbody id="history-list"></tbody></table></div>
+        <div id="history-comparison" class="task-grid"></div>
+        </details>
+      </div>
+    </div>
+  </section>
+  <section id="runpod" class="space-y-5">
+    <div>
+      <div class="eyebrow">REMOTE GPU</div>
+      <h2 class="text-3xl font-bold">Runpod capacity watch</h2>
+      <p>Checks once a minute for an available NVIDIA Secure Cloud GPU with at least 16 GB of VRAM.</p>
+    </div>
+
+    <div class="workspace-tabs" role="group" aria-label="Runpod workspace">
+      <button type="button" class="btn workspace-tab" data-runpod-view="runs" aria-pressed="true" aria-controls="runpod-view-runs">
+        <strong>Runs</strong><span>Launch jobs and review results</span>
+      </button>
+      <button type="button" class="btn workspace-tab" data-runpod-view="compare" aria-pressed="false" aria-controls="runpod-view-compare">
+        <strong>Compare LoRA</strong><span>Test saved image checkpoints</span>
+      </button>
+      <button type="button" class="btn workspace-tab" data-runpod-view="capacity" aria-pressed="false" aria-controls="runpod-view-capacity">
+        <strong>Capacity watch</strong><span>Check available GPUs</span>
+      </button>
+    </div>
+    <div class="panel card bg-base-200 border border-base-300" aria-label="Runpod job activity">
+      <output id="runpod-job-status" role="status">Idle</output>
+      <p id="runpod-job-error" role="status"></p>
+      <div class="flex flex-wrap gap-2">
+        <button id="runpod-job-stop" class="btn btn-outline" disabled>Cancel test</button>
+        <button id="runpod-job-cleanup" class="btn btn-outline" disabled>Retry Pod cleanup</button>
+      </div>
+    </div>
+    <div id="runpod-view-runs">
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h3 class="card-title">Runpod tests</h3>
+        </div>
+        <p>Wait up to two hours for the cheapest eligible GPU. Run one public SDXL Turbo prompt, save the image to history, and delete the Pod. The quoted ceiling is $0.65/hour including estimated disk. The app checks the actual rate after creation and uses a 20-minute local deadline.</p>
+        <p>Keep this computer online until deletion is confirmed. The deadline depends on this computer reaching Runpod.</p>
+        <div class="flex flex-wrap gap-2">
+          <button id="runpod-job-start" class="btn btn-primary">Arm one paid test</button>
+          <button id="runpod-job-train" class="btn btn-primary">Arm botanical LoRA pilot</button>
+          <button id="runpod-job-train-dayton" class="btn btn-outline">Arm DaytonWitch LoRA pilot</button>
+          <button id="runpod-job-train-dayton-extended" class="btn btn-outline">Arm DaytonWitch extended · 480 steps</button>
+          <button id="runpod-job-train-dayton-context" class="btn btn-outline">Arm DaytonWitch consistency test</button>
+        </div>
+        <p>The LoRA pilot uses 40 Met Open Access prints for training and holds eight aside. It saves the 60- and 120-step adapters and a 12-image comparison grid. It requires 24 GB VRAM, with a $0.65/hour quoted ceiling and a two-hour local Pod deadline.</p>
+      </div>
+    </div>
+
+      <div class="run-workspace">
+        <div class="panel card bg-base-200 border border-base-300">
+          <h3>Run history</h3>
+          <div class="controls">
+            <label>Filter runs<input id="runpod-history-filter" class="input input-sm" type="search" placeholder="Model, prompt, GPU, status"></label>
+            <label>Sort<select id="runpod-history-sort" class="select select-sm"><option value="recent">Newest</option><option value="cost">Lowest cost</option><option value="speed">Fastest run</option></select></label>
+          </div>
+          <div class="desktop-table-scroll">
+            <table class="table table-zebra">
+              <thead><tr><th>Started / model</th><th>GPU</th><th>Status</th><th>Cost</th><th>Result</th></tr></thead>
+              <tbody id="runpod-job-history"></tbody>
+            </table>
+          </div>
+        <div id="runpod-previous-images"></div>
+        <details id="runpod-billing-other" hidden>
+          <summary>Other Pod charges in the last seven days</summary>
+          <div id="runpod-billing-unlinked"></div>
+        </details>
+
+        </div>
+        <div class="panel card bg-base-200 border border-base-300" id="runpod-run-detail"></div>
+      </div>
+    </div>
+    <div class="panel card bg-base-200 border border-base-300" id="runpod-inline-result" hidden></div>
+    <div class="task-grid" id="runpod-pinned-results" aria-label="Pinned Runpod results"></div>
+    <div id="runpod-view-compare" class="panel card bg-base-200 border border-base-300" hidden>
+        <div>
+          <h3 class="card-title">Compare a saved LoRA</h3>
+          <p>Compare SDXL Base with both checkpoints from the selected run. One paid Pod, one prompt, and one shared seed.</p>
+          <form id="runpod-eval">
+            <label>Training run<select class="select" id="runpod-eval-source" required></select></label>
+            <label>Positive prompt<textarea class="textarea w-full" id="runpod-eval-prompt" maxlength="1000" required></textarea></label>
+            <label>Negative prompt (optional)<textarea class="textarea w-full" id="runpod-eval-negative" rows="2" maxlength="1000" placeholder="text, lettering, logos, watermarks"></textarea></label>
+            <div class="controls" id="runpod-eval-samples"></div>
+            <label>Seed<input class="input" id="runpod-eval-seed" type="number" min="0" max="2147483647" value="42" required></label>
+            <button id="runpod-eval-submit" class="btn btn-primary" type="submit" disabled>Run paid comparison</button>
+          </form>
+        </div>
+
+    </div>
+    <div id="runpod-view-capacity" class="workspace-split" hidden>
+      <div class="space-y-4">
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h3 class="card-title">Current watch</h3>
+          <output id="runpod-status" role="status" class="badge badge-info badge-soft">Idle</output>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="runpod-start" class="btn btn-primary">Start watching</button>
+          <button id="runpod-stop" class="btn btn-outline" disabled>Stop watch</button>
+          <button id="runpod-alerts" class="btn btn-ghost">Enable browser alerts</button>
+        </div>
+        <label for="runpod-progress">Two-hour watch window</label>
+        <progress id="runpod-progress" class="progress progress-primary w-full" max="7200" value="0"></progress>
+        <p id="runpod-summary" class="font-mono text-sm"></p>
+        <p id="runpod-notifications" role="status" class="text-sm"></p>
+      </div>
+    </div>
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <h3 class="card-title">Latest catalog result</h3>
+        <p id="runpod-quote">Waiting for the first check.</p>
+        <p id="runpod-checked" class="text-sm"></p>
+      </div>
+    </div>
+
+      </div>
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <h3 class="card-title">Check timeline</h3>
+        <ol id="runpod-timeline" class="max-h-96 space-y-2 overflow-auto" aria-label="Runpod check history">
+          <li>Completed checks will appear here.</li>
+        </ol>
+      </div>
+    </div>
+
+    </div>
+  </section>
+  <section id="media">
+    <div class="eyebrow">MEDIA STUDIO</div>
+    <h2 id="media-page-title">Speech</h2>
+    <div class="workspace-split">
+      <form id="media-form" class="card bg-base-200 border border-base-300 p-5 gap-3">
+        <label for="media-source">Execution and model</label>
+        <select id="media-source" class="select w-full">
+          <option data-media="speech" value="windows">Local CPU · Windows System.Speech</option>
+          <option data-media="speech" value="eleven-speech">ElevenLabs · Multilingual v2</option>
+          <option data-media="music" value="eleven-music">ElevenLabs · Music v2.5 · 10 seconds</option>
+          <option data-media="music" value="local-music">Local CPU · MusicGen Small</option>
+          <option data-media="music" value="runpod-music">Paid Runpod GPU · HeartMuLa 3B</option>
+          <option data-media="music" value="" disabled>HeartMuLa 7B · checkpoint unreleased</option>
+          <option data-media="video" value="local-video">Local CUDA · Wan2.1 1.3B</option>
+        </select>
+        <p id="media-key"></p>
+        <label id="media-lyrics-control" hidden>Lyrics (optional)
+          <textarea class="textarea w-full" id="media-lyrics" rows="4" maxlength="1500" placeholder="[Verse]&#10;Morning spills across the sill&#10;Jazzy waits beside the mill"></textarea>
+          Leave blank for an instrumental request.
+        </label>
+        <div id="media-heartmula-settings" hidden>
+          <label>Maximum length
+            <select class="select" id="media-music-duration">
+              <option value="30">30 seconds</option>
+              <option value="60">60 seconds</option>
+              <option value="90">90 seconds</option>
+              <option value="120">120 seconds</option>
+            </select>
+          </label>
+          <p>HeartMuLa can end the song early. Add more verses and repeat the chorus for a longer arrangement.</p>
+          <div class="controls" id="media-style-samples" aria-label="HeartMuLa style examples"></div>
+        </div>
+        <div id="media-quota-panel" hidden>
+          <p id="media-quota" role="status"></p>
+          <button id="media-refresh-quota" type="button" class="btn btn-sm">Refresh ElevenLabs credits</button>
+        </div>
+        <label id="media-voice-label" hidden>ElevenLabs voice ID
+          <input id="media-voice" class="input w-full" maxlength="64" placeholder="George (provider default for this tool)">
+        </label>
+        <label for="media-text" id="media-text-label">Text to speak</label>
+        <textarea id="media-text" class="textarea w-full" rows="4" maxlength="1000" required></textarea>
+        <button type="button" id="media-sample" class="btn btn-sm">Use sample</button>
+        <label id="media-approval" hidden><input id="media-paid" class="checkbox checkbox-sm" type="checkbox"> Send this input to ElevenLabs and authorize one request that may consume credits. Stop ends the local wait. Provider processing and billing may continue.</label>
+        <button id="media-submit" class="btn btn-primary">Run fresh</button>
+        <button id="media-replay" class="btn">Replay exact match</button>
+        <p id="media-status" role="status"></p>
+        <ol id="media-activity" aria-label="Media activity"></ol>
+      </form>
+      <div class="card bg-base-200 border border-base-300 p-5 gap-3">
+        <h3>Saved results</h3>
+        <p>Choose two saved runs to compare output from the same prompt.</p>
+        <select id="media-history-a" class="select w-full" aria-label="Result A"></select>
+        <div id="media-result-a"></div>
+        <select id="media-history-b" class="select w-full" aria-label="Result B"></select>
+        <div id="media-result-b"></div>
+      </div>
+    </div>
+  </section>
+  <section id="catalog">
+    <div class="eyebrow">05 / MODEL GUIDE</div>
+    <h2>Model and training comparison</h2>
+    <div class="overflow-x-auto card bg-base-200 border border-base-300">
+      <table class="table">
+        <thead><tr><th>Task</th><th>Model and execution</th><th>Try it</th><th>What to measure before training</th></tr></thead>
+        <tbody>
+          <tr><td>Chat</td><td>Qwen2 0.5B Instruct INT4 · Local OpenVINO</td><td><a class="link" href="#chat">Chat</a></td><td>Check factual accuracy and instruction following on your own examples. Try better prompts before collecting fine-tuning examples.</td></tr>
+          <tr><td>Image</td><td>Stable Diffusion 1.5 INT8 · Local OpenVINO</td><td><a class="link" href="#images">Image Studio</a></td><td>Use the same reference and prompt across devices to compare fidelity and runtime. Device support varies by operation.</td></tr>
+          <tr><td>Image</td><td>SDXL Turbo · External Runpod<br>SDXL Base and saved LoRA adapters · External Runpod</td><td><a class="link" href="#images">Image Studio</a> / <a class="link" href="#runpod">Runpod</a></td><td>Compare base and LoRA at a fixed seed on prompts held out from training. Use Runpod’s run costs to evaluate the gain.</td></tr>
+          <tr><td>Speech</td><td>Windows System.Speech · Local CPU<br>Multilingual v2 · External ElevenLabs</td><td><a class="link" href="#media">Media Studio</a></td><td>Compare pronunciation, pacing and expression. Evaluate voice cloning separately with recordings you have permission to use.</td></tr>
+          <tr><td>Music</td><td>Music v2.5 · External ElevenLabs</td><td><a class="link" href="#media">Media Studio</a></td><td>Score genre, instrumentation and structure on the same prompts. Compare a base model to a fine-tuned model using held-out examples.</td></tr>
+          <tr><td>Video</td><td>Wan2.1 T2V 1.3B · NVIDIA CUDA only</td><td>Local option appears when the NVIDIA driver and checkpoint are present.</td><td>Measure motion, subject consistency and seconds of usable footage before collecting training clips.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="cards">
+      <article class="card bg-base-200 border border-base-300"><h3>MNIST · digit classification</h3><p>A trained convolutional network takes a 28 × 28 grayscale image and scores digits 0–9. Use it to explore classification, compare predictions across devices, and see how handwriting style affects mistakes. Scores are relative model outputs and can be high on bad inputs.</p></article>
+      <article class="card bg-base-200 border border-base-300"><h3>Synthetic convolution · feature maps</h3><p>Three fixed-weight graphs use 32, 64, or 128 pixel square inputs and produce 16, 32, or 64 channels. Their filters show how different parts of a drawing trigger activation. The heatmap shows the channel with the highest average activation, scaled to its own peak. These graphs have no learned labels.</p></article>
+      <article class="card bg-base-200 border border-base-300"><h3>Bring your own model</h3><p>The CLI benchmarks local ONNX and OpenVINO IR models with synthetic inputs. Manual tests use task-specific input preparation and output decoding. Text generation, transcription, embeddings, and object detection each need a dedicated adapter.</p></article>
+    </div>
+  </section>
+  </div>
+  <dialog id="history-preview" aria-labelledby="history-preview-title">
+    <div class="flex items-center justify-between gap-3">
+      <h3 id="history-preview-title">Saved result</h3>
+      <form method="dialog"><button class="btn btn-outline btn-sm" autofocus>Close</button></form>
+    </div>
+    <div id="history-preview-content" aria-live="polite"></div>
+  </dialog>
+</main>
+<script src="/dashboard.js" defer></script>
+
+
+
+
+

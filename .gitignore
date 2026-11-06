@@ -1,0 +1,10 @@
+/target/
+/models/
+/.venv/
+/.runtime/
+/.genai/
+/.genai-venv/
+/npu-lab.sqlite3*
+/.env
+/node_modules/
+/runpod-job/

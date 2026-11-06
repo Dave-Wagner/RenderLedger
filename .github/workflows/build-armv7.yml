@@ -1,0 +1,53 @@
+name: Build Linux ARMv7
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'Cargo.*'
+      - '.github/workflows/build-armv7.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  armv7:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install ARM cross compiler and emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf qemu-user
+          rustup target add armv7-unknown-linux-gnueabihf
+      - name: Build
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
+        run: cargo build --locked --release --target armv7-unknown-linux-gnueabihf
+      - name: Smoke test ARM executable and dashboard
+        run: |
+          binary="$GITHUB_WORKSPACE/target/armv7-unknown-linux-gnueabihf/release/renderledger"
+          work="$(mktemp -d)"
+          cd "$work"
+          qemu-arm -L /usr/arm-linux-gnueabihf "$binary" --help
+          qemu-arm -L /usr/arm-linux-gnueabihf "$binary" gui 8765 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 8 --retry-connrefused --retry-delay 1 http://127.0.0.1:8765/ -o dashboard.html
+          grep -F '<title>RenderLedger</title>' dashboard.html
+          curl --fail --silent --show-error http://127.0.0.1:8765/history
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf dist/RenderLedger-linux-armv7.tar.gz -C target/armv7-unknown-linux-gnueabihf/release renderledger -C "$GITHUB_WORKSPACE" LICENSE
+          cd dist
+          sha256sum RenderLedger-linux-armv7.tar.gz > RenderLedger-linux-armv7.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RenderLedger-linux-armv7
+          path: dist/
+          if-no-files-found: error

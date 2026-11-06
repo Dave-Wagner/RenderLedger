@@ -24,3 +24,9 @@
 ## Local model compatibility
 
 - Check the target laptop's CPU, Intel GPU, or NPU support before presenting a model as locally runnable. Check hardware and runtime prerequisites before downloading checkpoints. Label CUDA-only backends explicitly and hide them from the local runner when the NVIDIA driver is unavailable.
+
+## Gitflow and distribution
+
+- Branch from `dev` for feature and fix work. Open pull requests into `dev` and verify there first. Promote tested changes to `main` through a release pull request. Tag production releases from `main`. For urgent production hotfixes, branch from `main` and bring the fix back to `dev` after release.
+- Update `.env.example` in the same change as every public environment option. Use blank credential values and explain whether each setting is read from the file or requires a process environment override. Do not expose internal worker variables.
+- Only package allowlisted files. Keep private datasets, live configuration, run history, downloaded models and provider keys out of the public repository and artifacts.

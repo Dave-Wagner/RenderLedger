@@ -9,10 +9,30 @@ pub fn serve() -> io::Result<()> {
 }
 
 pub fn serve_on(port: u16) -> io::Result<()> {
+    serve_dashboard(port, false)
+}
+
+pub fn serve_and_open() -> io::Result<()> {
+    serve_dashboard(8765, true)
+}
+
+fn serve_dashboard(port: u16, open_browser: bool) -> io::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     let host = listener.local_addr()?.to_string();
     let origin = format!("http://{host}");
     println!("Open {origin} in your browser. Press Ctrl+C to stop.");
+    if open_browser {
+        let (program, args): (&str, Vec<&str>) = if cfg!(windows) {
+            ("rundll32.exe", vec!["url.dll,FileProtocolHandler", &origin])
+        } else if cfg!(target_os = "macos") {
+            ("open", vec![&origin])
+        } else {
+            ("xdg-open", vec![&origin])
+        };
+        if let Err(error) = std::process::Command::new(program).args(args).spawn() {
+            eprintln!("Could not open your browser: {error}. Open {origin} manually.");
+        }
+    }
     for stream in listener.incoming() {
         let host = host.clone();
         let origin = origin.clone();

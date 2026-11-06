@@ -1,0 +1,35 @@
+name: Build Windows installers
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: windows-11-arm
+          - arch: x64
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate public configuration template
+        run: ./scripts/check-env.ps1
+      - name: Build and package
+        run: ./package-windows.ps1 -Architecture ${{ matrix.arch }}
+      - name: Verify installed package
+        run: ./scripts/test-windows-package.ps1 -Architecture ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RenderLedger-windows-${{ matrix.arch }}
+          path: target/distribution/packages/RenderLedger-windows-${{ matrix.arch }}-unsigned.zip*
+          if-no-files-found: error
